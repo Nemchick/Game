@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <style>
+      .container {
+        display: flex;
+        gap: 20px;
+        padding: 20px;
+        justify-content: center;
+      }
+
+      .field {
+        width: 300px;
+        height: 300px;
+        border: 2px solid #000;
+        position: relative;
+      }
+
+      .field-a {
+        background: #fff3e0;
+      }
+
+      .field-b {
+        background: #e3f2fd;
+      }
+
+      .dot {
+        width: 20px;
+        height: 20px;
+        background: gold;
+        border-radius: 50%;
+        position: absolute;
+        transition: all 0.3s ease;
+        user-select: none;
+        z-index: 1;
+      }
+
+      .dot.draggable {
+        cursor: move;
+      }
+
+      .dot.dragging {
+        opacity: 0.5;
+        z-index: 1000;
+      }
+
+      .field-b .dot:hover {
+        transform: scale(1.2);
+      }
+
+      .controls {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        min-width: 200px;
+      }
+
+      .button {
+        padding: 10px;
+        cursor: pointer;
+        background: #4caf50;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        transition: background 0.3s;
+      }
+
+      .button:hover {
+        background: #45a049;
+      }
+
+      .button:disabled {
+        background: #cccccc;
+        cursor: not-allowed;
+      }
+
+      .timer {
+        margin-top: 10px;
+        color: #ff0000;
+        font-weight: bold;
+      }
+
+      @keyframes shuffle {
+        0% {
+          transform: translate(0, 0);
+        }
+        50% {
+          transform: translate(10px, 10px) rotate(180deg);
+        }
+        100% {
+          transform: translate(0, 0);
+        }
+      }
+
+      .shuffle {
+        animation: shuffle 0.5s ease;
+      }
+
+      .colored {
+        background: #ff9800;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="field field-a" id="fieldA"></div>
+      <div class="field field-b" id="fieldB"></div>
+
+      <div class="controls">
+        <button class="button" id="colorBtn" onclick="changeColor()">
+          Изменить цвет
+        </button>
+        <button class="button" id="shuffleBtn" onclick="shuffleDots()">
+          Перемешать автоматически
+        </button>
+        <button class="button" id="resetBtn" onclick="resetPositions()">
+          Сбросить позиции
+        </button>
+        <button class="button" id="manualBtn" onclick="enableManualDrag()">
+          Перемешать вручную
+        </button>
+        <div id="timer" class="timer"></div>
+      </div>
+    </div>
+
+    <script>
+      const initialPositions = new Map();
+      let dragTimer = null;
+      let countdownInterval = null;
+
+      // Конфигурация
+      const CONFIG = {
+        dotsCountA: 50, // Количество точек в поле A
+        dotsCountB: 55, // Количество точек в поле B
+        spreadFactorA: 2.5, // Фактор разброса для поля A (0-1)
+        spreadFactorB: 1.4, // Фактор разброса для поля B (0-1)
+      };
+
+      // Генерация случайной позиции с учетом фактора разброса
+      function generateRandomPosition(field, spreadFactor) {
+        const padding = 20; // отступ от краев
+        const centerX = field.offsetWidth / 2;
+        const centerY = field.offsetHeight / 2;
+
+        const maxOffset =
+          (Math.min(field.offsetWidth, field.offsetHeight) / 2) * spreadFactor;
+
+        const generateOffset = () => {
+          let offset = 0;
+          for (let i = 0; i < 3; i++) {
+            offset += Math.random() * 2 - 1;
+          }
+          return (offset / 3) * maxOffset;
+        };
+
+        const x = centerX + generateOffset();
+        const y = centerY + generateOffset();
+
+        return {
+          left: Math.max(
+            padding,
+            Math.min(field.offsetWidth - padding - 20, x)
+          ),
+          top: Math.max(
+            padding,
+            Math.min(field.offsetHeight - padding - 20, y)
+          ),
+        };
+      }
+
+      // Генерация точек
+      function generateDots() {
+        const fieldA = document.getElementById("fieldA");
+        const fieldB = document.getElementById("fieldB");
+
+        // Очищаем поля
+        fieldA.innerHTML = "";
+        fieldB.innerHTML = "";
+        initialPositions.clear();
+
+        // Генерируем точки для поля A
+        for (let i = 0; i < CONFIG.dotsCountA; i++) {
+          const dot = createDot();
+          const pos = generateRandomPosition(fieldA, CONFIG.spreadFactorA);
+          dot.style.left = `${pos.left}px`;
+          dot.style.top = `${pos.top}px`;
+          fieldA.appendChild(dot);
+          savePosition(dot);
+        }
+
+        // Генерируем точки для поля B
+        for (let i = 0; i < CONFIG.dotsCountB; i++) {
+          const dot = createDot();
+          const pos = generateRandomPosition(fieldB, CONFIG.spreadFactorB);
+          dot.style.left = `${pos.left}px`;
+          dot.style.top = `${pos.top}px`;
+          fieldB.appendChild(dot);
+          savePosition(dot);
+        }
+      }
+
+      // Создание одной точки
+      function createDot() {
+        const dot = document.createElement("div");
+        dot.className = "dot";
+        return dot;
+      }
+
+      // Сохранение начальной позиции
+      function savePosition(dot) {
+        initialPositions.set(dot, {
+          top: dot.style.top,
+          left: dot.style.left,
+        });
+      }
+
+      // Включение ручного перетаскивания
+      function enableManualDrag() {
+        const manualBtn = document.getElementById("manualBtn");
+        const fieldBDots = document.querySelectorAll(".field-b .dot");
+        const timer = document.getElementById("timer");
+
+        manualBtn.disabled = true;
+        let timeLeft = 60;
+
+        fieldBDots.forEach((dot) => {
+          dot.classList.add("draggable");
+          dot.addEventListener("mousedown", startDragging);
+          dot.addEventListener("touchstart", startDragging, { passive: false });
+        });
+
+        timer.textContent = `Осталось: ${timeLeft} сек`;
+        countdownInterval = setInterval(() => {
+          timeLeft--;
+          timer.textContent = `Осталось: ${timeLeft} сек`;
+
+          if (timeLeft <= 0) {
+            disableManualDrag();
+          }
+        }, 1000);
+
+        dragTimer = setTimeout(disableManualDrag, 60000);
+      }
+
+      // Отключение ручного перетаскивания
+      function disableManualDrag() {
+        const fieldBDots = document.querySelectorAll(".field-b .dot");
+        const manualBtn = document.getElementById("manualBtn");
+        const timer = document.getElementById("timer");
+
+        fieldBDots.forEach((dot) => {
+          dot.classList.remove("draggable");
+          dot.removeEventListener("mousedown", startDragging);
+          dot.removeEventListener("touchstart", startDragging);
+        });
+
+        clearTimeout(dragTimer);
+        clearInterval(countdownInterval);
+        timer.textContent = "";
+        manualBtn.disabled = false;
+      }
+
+      // Функция перетаскивания
+      function startDragging(e) {
+        if (!e.target.classList.contains("draggable")) return;
+
+        e.preventDefault();
+        const dot = e.target;
+        const field = dot.parentElement;
+
+        const rect = dot.getBoundingClientRect();
+        const fieldRect = field.getBoundingClientRect();
+
+        let shiftX = (e.clientX || e.touches[0].clientX) - rect.left;
+        let shiftY = (e.clientY || e.touches[0].clientY) - rect.top;
+
+        dot.classList.add("dragging");
+
+        function moveAt(pageX, pageY) {
+          let newLeft = pageX - shiftX - fieldRect.left;
+          let newTop = pageY - shiftY - fieldRect.top;
+
+          newLeft = Math.max(
+            0,
+            Math.min(newLeft, field.offsetWidth - dot.offsetWidth)
+          );
+          newTop = Math.max(
+            0,
+            Math.min(newTop, field.offsetHeight - dot.offsetHeight)
+          );
+
+          dot.style.left = newLeft + "px";
+          dot.style.top = newTop + "px";
+        }
+
+        function onMouseMove(e) {
+          moveAt(
+            e.clientX || e.touches[0].clientX,
+            e.clientY || e.touches[0].clientY
+          );
+        }
+
+        function stopDragging() {
+          document.removeEventListener("mousemove", onMouseMove);
+          document.removeEventListener("touchmove", onMouseMove);
+          document.removeEventListener("mouseup", stopDragging);
+          document.removeEventListener("touchend", stopDragging);
+          dot.classList.remove("dragging");
+        }
+
+        document.addEventListener("mousemove", onMouseMove);
+        document.addEventListener("touchmove", onMouseMove, { passive: false });
+        document.addEventListener("mouseup", stopDragging);
+        document.addEventListener("touchend", stopDragging);
+      }
+
+      // Изменение цвета
+      function changeColor() {
+        const dots = document.querySelectorAll(".field-b .dot");
+        dots.forEach((dot) => dot.classList.toggle("colored"));
+      }
+
+      // Автоматическое перемешивание
+      function shuffleDots() {
+        const fieldB = document.getElementById("fieldB");
+        const dots = fieldB.querySelectorAll(".dot");
+
+        dots.forEach((dot) => {
+          const pos = generateRandomPosition(fieldB, CONFIG.spreadFactorB);
+          dot.style.left = `${pos.left}px`;
+          dot.style.top = `${pos.top}px`;
+
+          dot.classList.add("shuffle");
+          setTimeout(() => dot.classList.remove("shuffle"), 500);
+        });
+      }
+
+      // Сброс позиций
+      function resetPositions() {
+        const dots = document.querySelectorAll(".dot");
+        dots.forEach((dot) => {
+          const initialPos = initialPositions.get(dot);
+          if (initialPos) {
+            dot.style.top = initialPos.top;
+            dot.style.left = initialPos.left;
+          }
+        });
+      }
+
+      // Генерация точек при загрузке страницы
+      document.addEventListener("DOMContentLoaded", generateDots);
+    </script>
+  </body>
+</html>
