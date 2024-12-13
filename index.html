@@ -1,4 +1,3 @@
-<!DOCTYPE html>
 <html>
   <head>
     <style>
@@ -25,8 +24,8 @@
       }
 
       .dot {
-        width: 20px;
-        height: 20px;
+        width: 12px;
+        height: 12px;
         background: gold;
         border-radius: 50%;
         position: absolute;
@@ -75,7 +74,6 @@
       }
 
       .timer {
-        margin-top: 10px;
         color: #ff0000;
         font-weight: bold;
       }
@@ -107,6 +105,17 @@
       <div class="field field-b" id="fieldB"></div>
 
       <div class="controls">
+        <label>
+          Количество элементов в блоке A:
+          <input type="number" id="dotsCountAInput" value="20" min="1" />
+        </label>
+        <label>
+          Количество элементов в блоке B:
+          <input type="number" id="dotsCountBInput" value="20" min="1" />
+        </label>
+        <button class="button" id="generateBtn" onclick="generateDots()">
+          Сгенерировать точки
+        </button>
         <button class="button" id="colorBtn" onclick="changeColor()">
           Изменить цвет
         </button>
@@ -130,46 +139,148 @@
 
       // Конфигурация
       const CONFIG = {
-        dotsCountA: 50, // Количество точек в поле A
-        dotsCountB: 55, // Количество точек в поле B
-        spreadFactorA: 2.5, // Фактор разброса для поля A (0-1)
-        spreadFactorB: 1.4, // Фактор разброса для поля B (0-1)
+        dotsCountA: 20, // Количество точек в поле A
+        dotsCountB: 20, // Количество точек в поле B
+        clusterRadius: 50, // Радиус кластера для точек в поле B
+        minDistanceA: 30, // Минимальное расстояние между точками в поле A
+        minDistanceB: 15, // Минимальное расстояние между точками в поле B
+        randomScatterChance: 0.2, // Вероятность "отлета" точки в блоке B
+        scatterRadius: 100, // Радиус случайного "отлета" точки в блоке B
       };
 
-      // Генерация случайной позиции с учетом фактора разброса
-      function generateRandomPosition(field, spreadFactor) {
-        const padding = 20; // отступ от краев
+      // Таймер для ручного перемешивания
+      function startManualTimer() {
+        const timerDisplay = document.getElementById("timer");
+        let timeRemaining = 60; // Таймер на 60 секунд
+
+        clearInterval(countdownInterval);
+
+        countdownInterval = setInterval(() => {
+          timerDisplay.textContent = `Осталось: ${timeRemaining} сек`;
+          timeRemaining--;
+
+          if (timeRemaining < 0) {
+            clearInterval(countdownInterval);
+            timerDisplay.textContent = "Время вышло!";
+            disableManualDrag();
+          }
+        }, 1000);
+      }
+
+      // Включение ручного перемешивания
+      function enableManualDrag() {
+        const dots = document.querySelectorAll(".field-b .dot");
+
+        dots.forEach((dot) => makeDotDraggable(dot));
+        startManualTimer();
+      }
+
+      function disableManualDrag() {
+        const dots = document.querySelectorAll(".field-b .dot");
+
+        dots.forEach((dot) => {
+          dot.classList.remove("draggable");
+          dot.removeEventListener("mousedown", startDragging);
+          dot.removeEventListener("touchstart", startDragging);
+        });
+      }
+
+      // Проверка, что точки не пересекаются
+      function isFarEnough(x, y, positions, minDistance) {
+        return positions.every(
+          (pos) =>
+            Math.sqrt(Math.pow(pos.left - x, 2) + Math.pow(pos.top - y, 2)) >=
+            minDistance
+        );
+      }
+
+      // Генерация случайных точек с проверкой расстояния
+      function generateRandomPositions(field, count, minDistance) {
+        const positions = [];
+
+        for (let i = 0; i < count; i++) {
+          let x, y;
+          let attempts = 0;
+
+          do {
+            x = Math.random() * (field.offsetWidth - 12);
+            y = Math.random() * (field.offsetHeight - 12);
+            attempts++;
+          } while (
+            (!isFarEnough(x, y, positions, minDistance) ||
+              x < 0 ||
+              y < 0 ||
+              x > field.offsetWidth - 12 ||
+              y > field.offsetHeight - 12) &&
+            attempts < 100
+          );
+
+          if (attempts < 100) {
+            positions.push({ left: x, top: y });
+          }
+        }
+
+        return positions;
+      }
+
+      // Генерация точек в форме кластера с возможностью "отлета" точек
+      function generateClusteredPositions(
+        field,
+        count,
+        clusterRadius,
+        minDistance
+      ) {
+        const positions = [];
         const centerX = field.offsetWidth / 2;
         const centerY = field.offsetHeight / 2;
 
-        const maxOffset =
-          (Math.min(field.offsetWidth, field.offsetHeight) / 2) * spreadFactor;
+        for (let i = 0; i < count; i++) {
+          let x, y;
+          let attempts = 0;
 
-        const generateOffset = () => {
-          let offset = 0;
-          for (let i = 0; i < 3; i++) {
-            offset += Math.random() * 2 - 1;
+          do {
+            const isScatter = Math.random() < CONFIG.randomScatterChance;
+
+            if (isScatter) {
+              // Генерация точки за пределами основного кластера
+              const angle = Math.random() * 2 * Math.PI;
+              const radius = CONFIG.scatterRadius * Math.random();
+              x = centerX + radius * Math.cos(angle) - 6;
+              y = centerY + radius * Math.sin(angle) - 6;
+            } else {
+              // Генерация точки внутри основного кластера
+              const angle = Math.random() * 2 * Math.PI;
+              const radius = Math.random() * clusterRadius;
+              x = centerX + radius * Math.cos(angle) - 6;
+              y = centerY + radius * Math.sin(angle) - 6;
+            }
+
+            attempts++;
+          } while (
+            (!isFarEnough(x, y, positions, minDistance) ||
+              x < 0 ||
+              y < 0 ||
+              x > field.offsetWidth - 12 ||
+              y > field.offsetHeight - 12) &&
+            attempts < 100
+          );
+
+          if (attempts < 100) {
+            positions.push({ left: x, top: y });
           }
-          return (offset / 3) * maxOffset;
-        };
+        }
 
-        const x = centerX + generateOffset();
-        const y = centerY + generateOffset();
-
-        return {
-          left: Math.max(
-            padding,
-            Math.min(field.offsetWidth - padding - 20, x)
-          ),
-          top: Math.max(
-            padding,
-            Math.min(field.offsetHeight - padding - 20, y)
-          ),
-        };
+        return positions;
       }
 
       // Генерация точек
       function generateDots() {
+        const dotsCountAInput = document.getElementById("dotsCountAInput");
+        const dotsCountBInput = document.getElementById("dotsCountBInput");
+
+        CONFIG.dotsCountA = parseInt(dotsCountAInput.value, 10) || 20;
+        CONFIG.dotsCountB = parseInt(dotsCountBInput.value, 10) || 20;
+
         const fieldA = document.getElementById("fieldA");
         const fieldB = document.getElementById("fieldB");
 
@@ -179,24 +290,34 @@
         initialPositions.clear();
 
         // Генерируем точки для поля A
-        for (let i = 0; i < CONFIG.dotsCountA; i++) {
+        const positionsA = generateRandomPositions(
+          fieldA,
+          CONFIG.dotsCountA,
+          CONFIG.minDistanceA
+        );
+        positionsA.forEach((pos) => {
           const dot = createDot();
-          const pos = generateRandomPosition(fieldA, CONFIG.spreadFactorA);
           dot.style.left = `${pos.left}px`;
           dot.style.top = `${pos.top}px`;
           fieldA.appendChild(dot);
           savePosition(dot);
-        }
+        });
 
-        // Генерируем точки для поля B
-        for (let i = 0; i < CONFIG.dotsCountB; i++) {
+        // Генерируем точки для поля B (в форме кластера с "отлетами")
+        const positionsB = generateClusteredPositions(
+          fieldB,
+          CONFIG.dotsCountB,
+          CONFIG.clusterRadius,
+          CONFIG.minDistanceB
+        );
+        positionsB.forEach((pos) => {
           const dot = createDot();
-          const pos = generateRandomPosition(fieldB, CONFIG.spreadFactorB);
           dot.style.left = `${pos.left}px`;
           dot.style.top = `${pos.top}px`;
           fieldB.appendChild(dot);
+          makeDotDraggable(dot);
           savePosition(dot);
-        }
+        });
       }
 
       // Создание одной точки
@@ -214,71 +335,25 @@
         });
       }
 
-      // Включение ручного перетаскивания
-      function enableManualDrag() {
-        const manualBtn = document.getElementById("manualBtn");
-        const fieldBDots = document.querySelectorAll(".field-b .dot");
-        const timer = document.getElementById("timer");
-
-        manualBtn.disabled = true;
-        let timeLeft = 60;
-
-        fieldBDots.forEach((dot) => {
-          dot.classList.add("draggable");
-          dot.addEventListener("mousedown", startDragging);
-          dot.addEventListener("touchstart", startDragging, { passive: false });
-        });
-
-        timer.textContent = `Осталось: ${timeLeft} сек`;
-        countdownInterval = setInterval(() => {
-          timeLeft--;
-          timer.textContent = `Осталось: ${timeLeft} сек`;
-
-          if (timeLeft <= 0) {
-            disableManualDrag();
-          }
-        }, 1000);
-
-        dragTimer = setTimeout(disableManualDrag, 60000);
+      // Включение ручного перетаскивания точек
+      function makeDotDraggable(dot) {
+        dot.classList.add("draggable");
+        dot.addEventListener("mousedown", startDragging);
+        dot.addEventListener("touchstart", startDragging, { passive: false });
       }
 
-      // Отключение ручного перетаскивания
-      function disableManualDrag() {
-        const fieldBDots = document.querySelectorAll(".field-b .dot");
-        const manualBtn = document.getElementById("manualBtn");
-        const timer = document.getElementById("timer");
+      function startDragging(event) {
+        event.preventDefault();
 
-        fieldBDots.forEach((dot) => {
-          dot.classList.remove("draggable");
-          dot.removeEventListener("mousedown", startDragging);
-          dot.removeEventListener("touchstart", startDragging);
-        });
-
-        clearTimeout(dragTimer);
-        clearInterval(countdownInterval);
-        timer.textContent = "";
-        manualBtn.disabled = false;
-      }
-
-      // Функция перетаскивания
-      function startDragging(e) {
-        if (!e.target.classList.contains("draggable")) return;
-
-        e.preventDefault();
-        const dot = e.target;
+        const dot = event.target;
         const field = dot.parentElement;
 
-        const rect = dot.getBoundingClientRect();
-        const fieldRect = field.getBoundingClientRect();
-
-        let shiftX = (e.clientX || e.touches[0].clientX) - rect.left;
-        let shiftY = (e.clientY || e.touches[0].clientY) - rect.top;
-
-        dot.classList.add("dragging");
+        let shiftX = event.clientX - dot.getBoundingClientRect().left;
+        let shiftY = event.clientY - dot.getBoundingClientRect().top;
 
         function moveAt(pageX, pageY) {
-          let newLeft = pageX - shiftX - fieldRect.left;
-          let newTop = pageY - shiftY - fieldRect.top;
+          let newLeft = pageX - shiftX - field.offsetLeft;
+          let newTop = pageY - shiftY - field.offsetTop;
 
           newLeft = Math.max(
             0,
@@ -289,47 +364,38 @@
             Math.min(newTop, field.offsetHeight - dot.offsetHeight)
           );
 
-          dot.style.left = newLeft + "px";
-          dot.style.top = newTop + "px";
+          dot.style.left = `${newLeft}px`;
+          dot.style.top = `${newTop}px`;
         }
 
-        function onMouseMove(e) {
-          moveAt(
-            e.clientX || e.touches[0].clientX,
-            e.clientY || e.touches[0].clientY
-          );
-        }
-
-        function stopDragging() {
-          document.removeEventListener("mousemove", onMouseMove);
-          document.removeEventListener("touchmove", onMouseMove);
-          document.removeEventListener("mouseup", stopDragging);
-          document.removeEventListener("touchend", stopDragging);
-          dot.classList.remove("dragging");
+        function onMouseMove(event) {
+          moveAt(event.pageX, event.pageY);
         }
 
         document.addEventListener("mousemove", onMouseMove);
-        document.addEventListener("touchmove", onMouseMove, { passive: false });
         document.addEventListener("mouseup", stopDragging);
-        document.addEventListener("touchend", stopDragging);
+
+        function stopDragging() {
+          document.removeEventListener("mousemove", onMouseMove);
+          document.removeEventListener("mouseup", stopDragging);
+        }
       }
 
-      // Изменение цвета
-      function changeColor() {
-        const dots = document.querySelectorAll(".field-b .dot");
-        dots.forEach((dot) => dot.classList.toggle("colored"));
-      }
-
-      // Автоматическое перемешивание
+      // Перемешивание точек в блоке B
       function shuffleDots() {
         const fieldB = document.getElementById("fieldB");
-        const dots = fieldB.querySelectorAll(".dot");
+        const positionsB = generateClusteredPositions(
+          fieldB,
+          CONFIG.dotsCountB,
+          CONFIG.clusterRadius,
+          CONFIG.minDistanceB
+        );
 
-        dots.forEach((dot) => {
-          const pos = generateRandomPosition(fieldB, CONFIG.spreadFactorB);
+        const dots = fieldB.querySelectorAll(".dot");
+        dots.forEach((dot, index) => {
+          const pos = positionsB[index];
           dot.style.left = `${pos.left}px`;
           dot.style.top = `${pos.top}px`;
-
           dot.classList.add("shuffle");
           setTimeout(() => dot.classList.remove("shuffle"), 500);
         });
