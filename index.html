@@ -136,6 +136,7 @@
       const initialPositions = new Map();
       let dragTimer = null;
       let countdownInterval = null;
+      let isManualEnabled = false;
 
       // Конфигурация
       const CONFIG = {
@@ -148,6 +149,12 @@
         scatterRadius: 100, // Радиус случайного "отлета" точки в блоке B
       };
 
+      function changeColor() {
+        const dots = document.querySelectorAll(".field-b .dot");
+        dots.forEach((dot) => {
+          dot.classList.toggle("colored");
+        });
+      }
       // Таймер для ручного перемешивания
       function startManualTimer() {
         const timerDisplay = document.getElementById("timer");
@@ -162,27 +169,36 @@
           if (timeRemaining < 0) {
             clearInterval(countdownInterval);
             timerDisplay.textContent = "Время вышло!";
-            disableManualDrag();
+            disableManualDrag(); // Отключаем ручное перемешивание
           }
         }, 1000);
       }
 
       // Включение ручного перемешивания
       function enableManualDrag() {
+        if (isManualEnabled) return; // Предотвращаем повторное включение
+
+        isManualEnabled = true; // Включаем режим ручного перемешивания
         const dots = document.querySelectorAll(".field-b .dot");
 
-        dots.forEach((dot) => makeDotDraggable(dot));
+        dots.forEach((dot) => {
+          dot.classList.add("draggable");
+          dot.addEventListener("mousedown", startDragging);
+          dot.addEventListener("touchstart", startDragging, { passive: false });
+        });
+
         startManualTimer();
       }
 
       function disableManualDrag() {
         const dots = document.querySelectorAll(".field-b .dot");
-
         dots.forEach((dot) => {
           dot.classList.remove("draggable");
           dot.removeEventListener("mousedown", startDragging);
           dot.removeEventListener("touchstart", startDragging);
         });
+
+        isManualEnabled = false; // Сбрасываем флаг
       }
 
       // Проверка, что точки не пересекаются
@@ -197,21 +213,20 @@
       // Генерация случайных точек с проверкой расстояния
       function generateRandomPositions(field, count, minDistance) {
         const positions = [];
+        const padding = 2; // Отступ от края
 
         for (let i = 0; i < count; i++) {
           let x, y;
           let attempts = 0;
 
           do {
-            x = Math.random() * (field.offsetWidth - 12);
-            y = Math.random() * (field.offsetHeight - 12);
+            x =
+              Math.random() * (field.offsetWidth - 12 - 2 * padding) + padding;
+            y =
+              Math.random() * (field.offsetHeight - 12 - 2 * padding) + padding;
             attempts++;
           } while (
-            (!isFarEnough(x, y, positions, minDistance) ||
-              x < 0 ||
-              y < 0 ||
-              x > field.offsetWidth - 12 ||
-              y > field.offsetHeight - 12) &&
+            (!isFarEnough(x, y, positions, minDistance) || attempts > 100) &&
             attempts < 100
           );
 
@@ -284,12 +299,11 @@
         const fieldA = document.getElementById("fieldA");
         const fieldB = document.getElementById("fieldB");
 
-        // Очищаем поля
         fieldA.innerHTML = "";
         fieldB.innerHTML = "";
         initialPositions.clear();
 
-        // Генерируем точки для поля A
+        // Генерация точек в поле A
         const positionsA = generateRandomPositions(
           fieldA,
           CONFIG.dotsCountA,
@@ -303,7 +317,7 @@
           savePosition(dot);
         });
 
-        // Генерируем точки для поля B (в форме кластера с "отлетами")
+        // Генерация точек в поле B
         const positionsB = generateClusteredPositions(
           fieldB,
           CONFIG.dotsCountB,
@@ -315,9 +329,10 @@
           dot.style.left = `${pos.left}px`;
           dot.style.top = `${pos.top}px`;
           fieldB.appendChild(dot);
-          makeDotDraggable(dot);
           savePosition(dot);
         });
+
+        disableManualDrag(); // Отключаем возможность ручного перемешивания
       }
 
       // Создание одной точки
@@ -337,12 +352,20 @@
 
       // Включение ручного перетаскивания точек
       function makeDotDraggable(dot) {
-        dot.classList.add("draggable");
-        dot.addEventListener("mousedown", startDragging);
-        dot.addEventListener("touchstart", startDragging, { passive: false });
+        if (isManualEnabled) {
+          dot.classList.add("draggable");
+          dot.addEventListener("mousedown", startDragging);
+          dot.addEventListener("touchstart", startDragging, { passive: false });
+        } else {
+          dot.classList.remove("draggable");
+          dot.removeEventListener("mousedown", startDragging);
+          dot.removeEventListener("touchstart", startDragging);
+        }
       }
 
       function startDragging(event) {
+        if (!isManualEnabled) return; // Если ручное перемешивание не включено, выходим
+
         event.preventDefault();
 
         const dot = event.target;
