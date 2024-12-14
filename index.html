@@ -147,7 +147,9 @@
       let dragTimer = null;
       let countdownInterval = null;
       let isManualEnabled = false;
-
+      const lastPositions = {
+        B: [],
+      };
       // Конфигурация
       const CONFIG = {
         dotsCountA: 100, // Количество точек в поле A по умолчанию
@@ -170,7 +172,7 @@
         const timerDisplay = document.getElementById("timer");
         let timeRemaining = 60; // Таймер на 60 секунд
 
-        clearInterval(countdownInterval);
+        clearInterval(countdownInterval); // Сбрасываем предыдущий таймер
 
         countdownInterval = setInterval(() => {
           timerDisplay.textContent = `Осталось: ${timeRemaining} сек`;
@@ -178,17 +180,16 @@
 
           if (timeRemaining < 0) {
             clearInterval(countdownInterval);
+            countdownInterval = null; // Сбрасываем таймер
             timerDisplay.textContent = "Время вышло!";
-            disableManualDrag(); // Отключаем ручное перемешивание
+            disableManualDrag(); // Отключаем ручное перемещение
           }
         }, 1000);
       }
 
       // Включение ручного перемешивания
       function enableManualDrag() {
-        if (isManualEnabled) return; // Предотвращаем повторное включение
-
-        isManualEnabled = true; // Включаем режим ручного перемешивания
+        isManualEnabled = true; // Устанавливаем флаг ручного перемещения
         const dots = document.querySelectorAll(".field-b .dot");
 
         dots.forEach((dot) => {
@@ -197,9 +198,11 @@
           dot.addEventListener("touchstart", startDragging, { passive: false });
         });
 
-        startManualTimer();
+        // Запускаем таймер только если он еще не запущен
+        if (!countdownInterval) {
+          startManualTimer(); // Активируем таймер
+        }
       }
-
       function disableManualDrag() {
         const dots = document.querySelectorAll(".field-b .dot");
         dots.forEach((dot) => {
@@ -208,7 +211,7 @@
           dot.removeEventListener("touchstart", startDragging);
         });
 
-        isManualEnabled = false; // Сбрасываем флаг
+        isManualEnabled = false; // Отключаем ручное перемещение
       }
 
       // Проверка, что точки не пересекаются
@@ -333,16 +336,22 @@
         const fieldA = document.getElementById("fieldA");
         const fieldB = document.getElementById("fieldB");
 
-        // Очистка блоков перед генерацией
+        // Очищаем блоки перед генерацией
         fieldA.innerHTML = "";
         fieldB.innerHTML = "";
 
+        // Генерация позиций для A и B
         const positionsA = generateCenteredPositions(fieldA, CONFIG.dotsCountA);
         const positionsB = generateChaoticClusterPositions(
           fieldB,
           CONFIG.dotsCountB
         );
 
+        // Сохраняем последние позиции для сброса
+        lastPositions.A = positionsA;
+        lastPositions.B = positionsB;
+
+        // Создаем точки в блоке A
         positionsA.forEach((pos) => {
           const dot = createDot();
           dot.style.left = `${pos.left}px`;
@@ -350,6 +359,7 @@
           fieldA.appendChild(dot);
         });
 
+        // Создаем точки в блоке B
         positionsB.forEach((pos) => {
           const dot = createDot();
           dot.style.left = `${pos.left}px`;
@@ -361,6 +371,7 @@
         dotsCountAInput.value = "";
         dotsCountBInput.value = "";
       }
+
       function generateChaoticClusterPositions(field, count) {
         const positions = [];
         const grid = {};
@@ -533,33 +544,49 @@
       // Перемешивание точек в блоке B
       function shuffleDots() {
         const fieldB = document.getElementById("fieldB");
-        const positionsB = generateClusteredPositions(
+
+        // Очищаем только поле B
+        fieldB.innerHTML = "";
+
+        // Генерация новых позиций для перемешивания в блоке B
+        const positionsB = generateChaoticClusterPositions(
           fieldB,
-          CONFIG.dotsCountB,
-          CONFIG.clusterRadius,
-          CONFIG.minDistanceB
+          CONFIG.dotsCountB
         );
 
-        const dots = fieldB.querySelectorAll(".dot");
-        dots.forEach((dot, index) => {
-          const pos = positionsB[index];
+        // Обновляем точки в блоке B
+        positionsB.forEach((pos) => {
+          const dot = createDot();
           dot.style.left = `${pos.left}px`;
           dot.style.top = `${pos.top}px`;
-          dot.classList.add("shuffle");
-          setTimeout(() => dot.classList.remove("shuffle"), 500);
+          fieldB.appendChild(dot);
         });
+
+        // Повторно включаем ручное перемещение, если таймер активен
+        if (countdownInterval) {
+          enableManualDrag(); // Сохраняем возможность перемещать вручную
+        }
       }
 
       // Сброс позиций
       function resetPositions() {
-        const dots = document.querySelectorAll(".dot");
-        dots.forEach((dot) => {
-          const initialPos = initialPositions.get(dot);
-          if (initialPos) {
-            dot.style.top = initialPos.top;
-            dot.style.left = initialPos.left;
-          }
+        const fieldB = document.getElementById("fieldB");
+
+        // Очищаем поле B
+        fieldB.innerHTML = "";
+
+        // Восстанавливаем позиции из lastPositions для блока B
+        lastPositions.B.forEach((pos) => {
+          const dot = createDot();
+          dot.style.left = `${pos.left}px`;
+          dot.style.top = `${pos.top}px`;
+          fieldB.appendChild(dot);
         });
+
+        // Повторно включаем ручное перемещение, если таймер активен
+        if (countdownInterval) {
+          enableManualDrag(); // Сохраняем возможность перемещать вручную
+        }
       }
 
       // Генерация точек при загрузке страницы
