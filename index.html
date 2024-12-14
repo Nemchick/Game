@@ -107,11 +107,21 @@
       <div class="controls">
         <label>
           Количество элементов в блоке A:
-          <input type="number" id="dotsCountAInput" value="20" min="1" />
+          <input
+            type="number"
+            id="dotsCountAInput"
+            placeholder="Введите количество"
+            min="1"
+          />
         </label>
         <label>
           Количество элементов в блоке B:
-          <input type="number" id="dotsCountBInput" value="20" min="1" />
+          <input
+            type="number"
+            id="dotsCountBInput"
+            placeholder="Введите количество"
+            min="1"
+          />
         </label>
         <button class="button" id="generateBtn" onclick="generateDots()">
           Сгенерировать точки
@@ -140,8 +150,8 @@
 
       // Конфигурация
       const CONFIG = {
-        dotsCountA: 20, // Количество точек в поле A
-        dotsCountB: 20, // Количество точек в поле B
+        dotsCountA: 100, // Количество точек в поле A по умолчанию
+        dotsCountB: 120, // Количество точек в поле B по умолчанию
         clusterRadius: 50, // Радиус кластера для точек в поле B
         minDistanceA: 30, // Минимальное расстояние между точками в поле A
         minDistanceB: 15, // Минимальное расстояние между точками в поле B
@@ -202,12 +212,33 @@
       }
 
       // Проверка, что точки не пересекаются
-      function isFarEnough(x, y, positions, minDistance) {
-        return positions.every(
-          (pos) =>
-            Math.sqrt(Math.pow(pos.left - x, 2) + Math.pow(pos.top - y, 2)) >=
-            minDistance
-        );
+      function isFarEnough(x, y, grid, gridSize, minDistance) {
+        const gridX = Math.floor(x / gridSize);
+        const gridY = Math.floor(y / gridSize);
+
+        for (let i = -1; i <= 1; i++) {
+          for (let j = -1; j <= 1; j++) {
+            const cell = grid[`${gridX + i},${gridY + j}`];
+            if (cell) {
+              for (const point of cell) {
+                const dx = point.x - x;
+                const dy = point.y - y;
+                if (Math.sqrt(dx * dx + dy * dy) < minDistance) {
+                  return false;
+                }
+              }
+            }
+          }
+        }
+        return true;
+      }
+
+      function addToGrid(x, y, grid, gridSize) {
+        const gridX = Math.floor(x / gridSize);
+        const gridY = Math.floor(y / gridSize);
+        const key = `${gridX},${gridY}`;
+        if (!grid[key]) grid[key] = [];
+        grid[key].push({ x, y });
       }
 
       // Генерация случайных точек с проверкой расстояния
@@ -293,46 +324,141 @@
         const dotsCountAInput = document.getElementById("dotsCountAInput");
         const dotsCountBInput = document.getElementById("dotsCountBInput");
 
-        CONFIG.dotsCountA = parseInt(dotsCountAInput.value, 10) || 20;
-        CONFIG.dotsCountB = parseInt(dotsCountBInput.value, 10) || 20;
+        // Если пользователь ввел значения, используем их. Иначе оставляем стандартные.
+        CONFIG.dotsCountA =
+          parseInt(dotsCountAInput.value, 10) || CONFIG.dotsCountA;
+        CONFIG.dotsCountB =
+          parseInt(dotsCountBInput.value, 10) || CONFIG.dotsCountB;
 
         const fieldA = document.getElementById("fieldA");
         const fieldB = document.getElementById("fieldB");
 
+        // Очистка блоков перед генерацией
         fieldA.innerHTML = "";
         fieldB.innerHTML = "";
-        initialPositions.clear();
 
-        // Генерация точек в поле A
-        const positionsA = generateRandomPositions(
-          fieldA,
-          CONFIG.dotsCountA,
-          CONFIG.minDistanceA
+        const positionsA = generateCenteredPositions(fieldA, CONFIG.dotsCountA);
+        const positionsB = generateChaoticClusterPositions(
+          fieldB,
+          CONFIG.dotsCountB
         );
+
         positionsA.forEach((pos) => {
           const dot = createDot();
           dot.style.left = `${pos.left}px`;
           dot.style.top = `${pos.top}px`;
           fieldA.appendChild(dot);
-          savePosition(dot);
         });
 
-        // Генерация точек в поле B
-        const positionsB = generateClusteredPositions(
-          fieldB,
-          CONFIG.dotsCountB,
-          CONFIG.clusterRadius,
-          CONFIG.minDistanceB
-        );
         positionsB.forEach((pos) => {
           const dot = createDot();
           dot.style.left = `${pos.left}px`;
           dot.style.top = `${pos.top}px`;
           fieldB.appendChild(dot);
-          savePosition(dot);
         });
 
-        disableManualDrag(); // Отключаем возможность ручного перемешивания
+        // Очистка инпутов после генерации
+        dotsCountAInput.value = "";
+        dotsCountBInput.value = "";
+      }
+      function generateChaoticClusterPositions(field, count) {
+        const positions = [];
+        const grid = {};
+        const gridSize = CONFIG.minDistanceB / 2; // Уменьшаем минимальное расстояние между точками
+        const padding = 5; // Минимальное расстояние до границ блока
+        const centerX = field.offsetWidth / 2;
+        const centerY = field.offsetHeight / 2;
+
+        for (let i = 0; i < count; i++) {
+          let x, y;
+          let attempts = 0;
+
+          do {
+            const isScatter = Math.random() < 0.2; // 20% точек будут "разбросаны" случайно
+
+            if (isScatter) {
+              // Генерация случайных точек по всему блоку
+              x = Math.random() * (field.offsetWidth - 2 * padding) + padding;
+              y = Math.random() * (field.offsetHeight - 2 * padding) + padding;
+            } else {
+              // Хаотичный круг с увеличенным разбросом
+              const angle = Math.random() * 2 * Math.PI;
+              const radius = Math.random() * (field.offsetWidth / 2.8); // Радиус чуть более вариативный
+              x = centerX + radius * Math.cos(angle);
+              y = centerY + radius * Math.sin(angle);
+
+              // Увеличиваем хаотичное смещение
+              x += (Math.random() - 0.5) * 25; // Смещение увеличено до 25px
+              y += (Math.random() - 0.5) * 25;
+            }
+
+            // Ограничиваем точки в пределах блока
+            x = Math.max(
+              padding,
+              Math.min(x, field.offsetWidth - padding - 12)
+            );
+            y = Math.max(
+              padding,
+              Math.min(y, field.offsetHeight - padding - 12)
+            );
+
+            attempts++;
+            if (attempts > 100) break; // Прерываем при большом числе попыток
+          } while (!isFarEnough(x, y, grid, gridSize, CONFIG.minDistanceB / 2)); // Проверяем расстояние
+
+          positions.push({ left: x, top: y });
+          addToGrid(x, y, grid, gridSize); // Добавляем точку в сетку
+        }
+
+        return positions;
+      }
+
+      // Генерация точек с уменьшением плотности у краев (для блока A)
+      function generateCenteredPositions(field, count) {
+        const positions = [];
+        const grid = {};
+        const gridSize = CONFIG.minDistanceA;
+        const padding = 5; // Минимальное расстояние до границ блока
+
+        for (let i = 0; i < count; i++) {
+          let x, y;
+          let attempts = 0;
+
+          do {
+            // Генерация случайных координат по всему блоку
+            x = Math.random() * (field.offsetWidth - 2 * padding) + padding;
+            y = Math.random() * (field.offsetHeight - 2 * padding) + padding;
+
+            // Слегка сдвигаем плотность к центру
+            if (Math.random() < 0.7) {
+              // 70% точек ближе к центру
+              const centerX = field.offsetWidth / 2;
+              const centerY = field.offsetHeight / 2;
+              const angle = Math.random() * 2 * Math.PI;
+              const radius = Math.random() * (field.offsetWidth / 2.5); // Радиус распределения
+              x = centerX + radius * Math.cos(angle);
+              y = centerY + radius * Math.sin(angle);
+            }
+
+            // Ограничиваем точки в пределах блока
+            x = Math.max(
+              padding,
+              Math.min(x, field.offsetWidth - padding - 12)
+            );
+            y = Math.max(
+              padding,
+              Math.min(y, field.offsetHeight - padding - 12)
+            );
+
+            attempts++;
+            if (attempts > 100) break; // Прерываем при большом числе попыток
+          } while (!isFarEnough(x, y, grid, gridSize, CONFIG.minDistanceA));
+
+          positions.push({ left: x, top: y });
+          addToGrid(x, y, grid, gridSize); // Добавляем точку в сетку
+        }
+
+        return positions;
       }
 
       // Создание одной точки
@@ -437,7 +563,9 @@
       }
 
       // Генерация точек при загрузке страницы
-      document.addEventListener("DOMContentLoaded", generateDots);
+      document.addEventListener("DOMContentLoaded", () => {
+        generateDots(); // Генерация точек при загрузке страницы
+      });
     </script>
   </body>
 </html>
